@@ -105,15 +105,15 @@ def eval_on_dir(config, args):
                 # pixel value of origin and recons are in [-1.0, 1,0]
                 this_msssim = msssim.MultiScaleSSIM(origin, recons, max_val=2)
                 this_psnr = sess.run(tf.image.psnr(origin, recons, max_val=2))  # type:list
-                this_ssim = [0]
-                # this_ssim = sess.run(tf.image.ssim_multiscale(origin, recons, max_val=2))
-                print('image: {}/{} | SSIM: {:.5f} | MS-SSIM: {:.5f} | PSNR: {:.5f}'.format(i, test_num, this_ssim[0], this_msssim, this_psnr[0]))
+                # this_ssim = [0]
+                this_ssim = sess.run(tf.image.ssim(tf.convert_to_tensor(origin), tf.convert_to_tensor(recons), max_val=2))
+                print('image:{: 8d}/{} | PSNR: {:.5f} | SSIM: {:.5f} | MS-SSIM: {:.5f}'.format(i, test_num, this_psnr[0], this_ssim[0], this_msssim))
                 MSSSIM += this_msssim
                 PSNR += this_psnr[0]
                 SSIM += this_ssim[0]
             except tf.errors.OutOfRangeError:
                 print('finish evaluating on test set!')
-                print("SSIM: {:.5f} | MS-SSIM: {:.5f} | PSNR: {:.5f} | {:.3f} seconds per image".format(SSIM / test_num, MSSSIM /test_num , PSNR / test_num, (time.time()-starttime)/test_num))
+                print("PSNR: {:.5f} | SSIM: {:.5f} | MS-SSIM: {:.5f} | {:.3f} seconds per image".format(PSNR / test_num, SSIM / test_num, MSSSIM /test_num, (time.time()-starttime)/test_num))
                 return
 
 
