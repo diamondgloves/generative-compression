@@ -78,67 +78,65 @@ class Network(object):
         + C:        Bottleneck depth, controls bpp - last dimension of encoder output
         + TODO:     Concatenate quantized w_bar with noise sampled from prior
         """
-        init = tf.contrib.layers.xavier_initializer()
+        # def residual_block(x, n_filters, kernel_size=3, strides=1, actv=actv):
+        #     init = tf.contrib.layers.xavier_initializer()
+        #     # kwargs = {'center':True, 'scale':True, 'training':training, 'fused':True, 'renorm':False}
+        #     strides = [1,1]
+        #     identity_map = x
 
-        def residual_block(x, n_filters, kernel_size=3, strides=1, actv=actv):
-            init = tf.contrib.layers.xavier_initializer()
-            # kwargs = {'center':True, 'scale':True, 'training':training, 'fused':True, 'renorm':False}
-            strides = [1,1]
-            identity_map = x
+        #     p = int((kernel_size-1)/2)
+        #     res = tf.pad(x, [[0, 0], [p, p], [p, p], [0, 0]], 'REFLECT')
+        #     res = tf.layers.conv2d(res, filters=n_filters, kernel_size=kernel_size, strides=strides,
+        #             activation=None, padding='VALID')
+        #     res = actv(tf.contrib.layers.instance_norm(res))
 
-            p = int((kernel_size-1)/2)
-            res = tf.pad(x, [[0, 0], [p, p], [p, p], [0, 0]], 'REFLECT')
-            res = tf.layers.conv2d(res, filters=n_filters, kernel_size=kernel_size, strides=strides,
-                    activation=None, padding='VALID')
-            res = actv(tf.contrib.layers.instance_norm(res))
+        #     res = tf.pad(res, [[0, 0], [p, p], [p, p], [0, 0]], 'REFLECT')
+        #     res = tf.layers.conv2d(res, filters=n_filters, kernel_size=kernel_size, strides=strides,
+        #             activation=None, padding='VALID')
+        #     res = tf.contrib.layers.instance_norm(res)
 
-            res = tf.pad(res, [[0, 0], [p, p], [p, p], [0, 0]], 'REFLECT')
-            res = tf.layers.conv2d(res, filters=n_filters, kernel_size=kernel_size, strides=strides,
-                    activation=None, padding='VALID')
-            res = tf.contrib.layers.instance_norm(res)
+        #     assert res.get_shape().as_list() == identity_map.get_shape().as_list(), 'Mismatched shapes between input/output!'
+        #     out = tf.add(res, identity_map)
+        #     return out
 
-            assert res.get_shape().as_list() == identity_map.get_shape().as_list(), 'Mismatched shapes between input/output!'
-            out = tf.add(res, identity_map)
+        # def upsample_block(x, filters, kernel_size=[3,3], strides=2, padding='same', actv=actv, batch_norm=False):
+        #     bn_kwargs = {'center':True, 'scale':True, 'training':training, 'fused':True, 'renorm':False}
+        #     in_kwargs = {'center':True, 'scale': True}
+        #     x = tf.layers.conv2d_transpose(x, filters, kernel_size, strides=strides, padding=padding, activation=None)
+        #     if batch_norm is True:
+        #         x = tf.layers.batch_normalization(x, **bn_kwargs)
+        #     else:
+        #         x = tf.contrib.layers.instance_norm(x, **in_kwargs)
+        #     x = actv(x)
+        #     return x
 
-            return out
-
-        def upsample_block(x, filters, kernel_size=[3,3], strides=2, padding='same', actv=actv, batch_norm=False):
-            bn_kwargs = {'center':True, 'scale':True, 'training':training, 'fused':True, 'renorm':False}
-            in_kwargs = {'center':True, 'scale': True}
-            x = tf.layers.conv2d_transpose(x, filters, kernel_size, strides=strides, padding=padding, activation=None)
-            if batch_norm is True:
-                x = tf.layers.batch_normalization(x, **bn_kwargs)
-            else:
-                x = tf.contrib.layers.instance_norm(x, **in_kwargs)
-            x = actv(x)
-
-            return x
-
-        # Project channel dimension of w_bar to higher dimension
+        ''' Project channel dimension of w_bar to higher dimension'''
+        # init = tf.contrib.layers.xavier_initializer()
         # W_pc = tf.get_variable('W_pc_{}'.format(C), shape=[C, channel_upsample], initializer=init)
         # upsampled = tf.einsum('ijkl,lm->ijkm', w_bar, W_pc)
+
         with tf.variable_scope('decoder', reuse=reuse):
             w_bar = tf.pad(w_bar, [[0, 0], [1, 1], [1, 1], [0, 0]], 'REFLECT')
             upsampled = Utils.conv_block(w_bar, filters=960, kernel_size=3, strides=1, padding='VALID', actv=actv)
             
             # Process upsampled feature map with residual blocks
-            res = residual_block(upsampled, 960, actv=actv)
-            res = residual_block(res, 960, actv=actv)
-            res = residual_block(res, 960, actv=actv)
-            res = residual_block(res, 960, actv=actv)
-            res = residual_block(res, 960, actv=actv)
-            res = residual_block(res, 960, actv=actv)
-            res = residual_block(res, 960, actv=actv)
-            res = residual_block(res, 960, actv=actv)
-            res = residual_block(res, 960, actv=actv)
+            res = Utils.residual_block(upsampled, 960, actv=actv)
+            res = Utils.residual_block(res, 960, actv=actv)
+            res = Utils.residual_block(res, 960, actv=actv)
+            res = Utils.residual_block(res, 960, actv=actv)
+            res = Utils.residual_block(res, 960, actv=actv)
+            res = Utils.residual_block(res, 960, actv=actv)
+            res = Utils.residual_block(res, 960, actv=actv)
+            res = Utils.residual_block(res, 960, actv=actv)
+            res = Utils.residual_block(res, 960, actv=actv)
 
             # Upsample to original dimensions - mirror decoder
             f = [480, 240, 120, 60]
 
-            ups = upsample_block(res, f[0], 3, strides=[2,2], padding='same')
-            ups = upsample_block(ups, f[1], 3, strides=[2,2], padding='same')
-            ups = upsample_block(ups, f[2], 3, strides=[2,2], padding='same')
-            ups = upsample_block(ups, f[3], 3, strides=[2,2], padding='same')
+            ups = Utils.upsample_block(res, f[0], 3, strides=[2,2], padding='same')
+            ups = Utils.upsample_block(ups, f[1], 3, strides=[2,2], padding='same')
+            ups = Utils.upsample_block(ups, f[2], 3, strides=[2,2], padding='same')
+            ups = Utils.upsample_block(ups, f[3], 3, strides=[2,2], padding='same')
             
             ups = tf.pad(ups, [[0, 0], [3, 3], [3, 3], [0, 0]], 'REFLECT')
             ups = tf.layers.conv2d(ups, 3, kernel_size=7, strides=1, padding='VALID')
@@ -257,7 +255,7 @@ class Network(object):
 
         return out
 
-    @staticmethod
+    @staticmethod   # not used yet
     def dcgan_discriminator(x, config, training, reuse=False, actv=tf.nn.relu):
         # x is either generator output G(z) or drawn from the real data distribution
         init =  tf.contrib.layers.xavier_initializer()
@@ -287,7 +285,7 @@ class Network(object):
         return out
         
 
-    @staticmethod
+    @staticmethod  # not used yet
     def critic_grande(x, config, training, reuse=False, actv=tf.nn.relu, kernel_size=5, gradient_penalty=True):
         # x is either generator output G(z) or drawn from the real data distribution
         init =  tf.contrib.layers.xavier_initializer()
@@ -323,7 +321,7 @@ class Network(object):
 
         return out
 
-    @staticmethod
+    @staticmethod   # not used yet 
     def wrn(x, config, training, reuse=False, actv=tf.nn.relu):
         # Implements W-28-10 wide residual network
         # See Arxiv 1605.07146
@@ -428,7 +426,7 @@ class Network(object):
             return out
 
 
-    @staticmethod
+    @staticmethod   # not used yet
     def old_encoder(x, config, training, C, reuse=False, actv=tf.nn.relu):
         """
         Process image x ([512,1024]) into a feature map of size W/16 x H/16 x C

@@ -6,11 +6,10 @@ import glob, time, os
 
 from network import Network
 from data import Data
-from config import directories
 from utils import Utils
 
 class Model():
-    def __init__(self, config, paths, dataset, name='gan_compression', evaluate=False):
+    def __init__(self, config, paths, name, dataset, tensorboard=None, evaluate=False):
 
         # Build the computational graph
 
@@ -22,7 +21,7 @@ class Model():
 
         # >>> Data handling
         self.path_placeholder = tf.placeholder(paths.dtype, paths.shape)
-        self.test_path_placeholder = tf.placeholder(paths.dtype)            
+        self.test_path_placeholder = tf.placeholder(paths.dtype, paths.shape)          
 
         self.semantic_map_path_placeholder = tf.placeholder(paths.dtype, paths.shape)
         self.test_semantic_map_path_placeholder = tf.placeholder(paths.dtype)  
@@ -42,9 +41,7 @@ class Model():
                                          semantic_map_paths=self.test_semantic_map_path_placeholder,
                                          test=True)
 
-        self.iterator = tf.data.Iterator.from_string_handle(self.handle,
-                                                                    train_dataset.output_types,
-                                                                    train_dataset.output_shapes)
+        self.iterator = tf.data.Iterator.from_string_handle(self.handle, train_dataset.output_types, train_dataset.output_shapes)
 
         self.train_iterator = train_dataset.make_initializable_iterator()
         self.test_iterator = test_dataset.make_initializable_iterator()
@@ -74,7 +71,12 @@ class Model():
                 noise_prior = tf.contrib.distributions.MultivariateNormalDiag(loc=tf.zeros([config.noise_dim]), scale_diag=tf.ones([config.noise_dim]))
                 v = noise_prior.sample(tf.shape(self.example)[0])
                 Gv = Network.dcgan_generator(v, config, self.training_phase, C=config.channel_bottleneck, upsample_dim=config.upsample_dim)
-                self.z = tf.concat([self.w_hat, Gv], axis=-1)
+                try:                
+                    self.z = tf.concat([self.w_hat, Gv], axis=-1)
+                except:
+                    print('w_hat shape: ', self.w_hat.get_shape().as_list())
+                    print('Gv shape: ', Gv.get_shape().as_list())
+                    input('fail to concat, press enter to continue:')
             else:
                 self.z = self.w_hat
 
@@ -107,14 +109,11 @@ class Model():
         # =======================================================================================================>>>
         if config.use_vanilla_GAN is True:
             # Minimize JS divergence
-            D_loss_real = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=D_x,
-                labels=tf.ones_like(D_x)))
-            D_loss_gen = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=D_Gz,
-                labels=tf.zeros_like(D_Gz)))
+            D_loss_real = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=D_x, labels=tf.ones_like(D_x)))
+            D_loss_gen = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=D_Gz, labels=tf.zeros_like(D_Gz)))
             self.D_loss = D_loss_real + D_loss_gen
             # G_loss = max log D(G(z))
-            self.G_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=D_Gz,
-                labels=tf.ones_like(D_Gz)))
+            self.G_loss = tf.reduce_mean(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=D_Gz, labels=tf.ones_like(D_Gz)))
         else:
             # Minimize $\chi^2$ divergence
             self.D_loss = tf.reduce_mean(tf.square(D_x - 1.)) + tf.reduce_mean(tf.square(D_Gz))
@@ -123,7 +122,10 @@ class Model():
             if config.multiscale:
                 self.D_loss += tf.reduce_mean(tf.square(D_x2 - 1.)) + tf.reduce_mean(tf.square(D_x4 - 1.))
                 self.D_loss += tf.reduce_mean(tf.square(D_Gz2)) + tf.reduce_mean(tf.square(D_Gz4))
-
+        
+        # self.example = tf.Print(self.example, [self.example.shape],'shape of example')
+        # self.reconstruction = tf.Print(self.reconstruction, [self.reconstruction.shape], 'shape of reconstruction')
+        
         distortion_penalty = config.lambda_X * tf.losses.mean_squared_error(self.example, self.reconstruction)
         self.G_loss += distortion_penalty
 
@@ -135,13 +137,12 @@ class Model():
         
         # Optimization
         # =======================================================================================================>>>
-        G_opt = tf.train.AdamOptimizer(learning_rate=config.G_learning_rate, beta1=0.5)
-        D_opt = tf.train.AdamOptimizer(learning_rate=config.D_learning_rate, beta1=0.5)
+        if config.optimizer == 'adam':
+            G_opt = tf.train.AdamOptimizer(learning_rate=config.G_learning_rate, beta1=0.5)
+            D_opt = tf.train.AdamOptimizer(learning_rate=config.D_learning_rate, beta1=0.5)
 
         theta_G = Utils.scope_variables('generator')
         theta_D = Utils.scope_variables('discriminator')
-        # print('Generator parameters:', theta_G)
-        # print('Discriminator parameters:', theta_D)
         G_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, scope='generator')
         D_update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS, scope='discriminator')
 
@@ -176,7 +177,10 @@ class Model():
             tf.summary.image('semantic_map', self.semantic_map, max_outputs=4)
         self.merge_op = tf.summary.merge_all()
 
+        # dirs = directories(args)
+        if not os.path.exists(tensorboard):
+            os.mkdir(tensorboard)
         self.train_writer = tf.summary.FileWriter(
-            os.path.join(directories.tensorboard, '{}_train_{}'.format(name, time.strftime('%d-%m_%I:%M'))), graph=tf.get_default_graph())
-        self.test_writer = tf.summary.FileWriter(
-            os.path.join(directories.tensorboard, '{}_test_{}'.format(name, time.strftime('%d-%m_%I:%M'))))
+            os.path.join(tensorboard, '{}_train_{}'.format(name, time.strftime('%d-%m_%I:%M'))), graph=tf.get_default_graph())
+        # self.test_writer = tf.summary.FileWriter(
+        #     os.path.join(tensorboard, '{}_test_{}'.format(name, time.strftime('%d-%m_%I:%M'))))

@@ -1,0 +1,1 @@
+python compress.py --restore_last --ckpt_path=checkpoints/best/Cityscapes --image_path=data/Kodak/ --output_path=data/Kodak/GAN

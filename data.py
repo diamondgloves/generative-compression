@@ -2,7 +2,7 @@
 import tensorflow as tf
 import numpy as np
 import pandas as pd
-from config import directories
+# from config import directories
 
 class Data(object):
 
@@ -36,12 +36,31 @@ class Data(object):
                 # new_height = tf.to_int32(tf.to_float(height_i) / ratio)
                 new_height = height_i - tf.floormod(height_i, 16)
                 return tf.image.resize_image_with_crop_or_pad(image, new_height, width)
-
+            def _preserving_longer_side_768px_resize(image):
+                height_i = tf.shape(image)[0]
+                width_i = tf.shape(image)[1]
+                ratio = tf.to_float(width_i) / tf.to_float(height_i)
+                
+                def h_to_768():
+                    new_height = 768
+                    width_i = tf.to_int32(new_height * ratio)
+                    new_width = width_i - tf.floormod(width_i, 16)
+                    return new_height, new_width
+                def w_to_768():
+                    new_width = 768
+                    height_i = tf.to_int32(new_width / ratio)
+                    new_height = height_i - tf.floormod(height_i, 16)
+                    return new_height, new_width
+                new_height,new_width = tf.cond(tf.less(width_i, height_i),h_to_768, w_to_768)
+                # new_height = height_i - tf.floormod(height_i, 16)
+                # new_width = width_i - tf.floormod(width_i, 16)
+                return tf.image.resize_image_with_crop_or_pad(image, new_height, new_width)
             def _image_decoder(path):
                 im = tf.image.decode_png(tf.read_file(path), channels=3)
+                # im = tf.image.decode_jpeg(tf.read_file(path), channels=3)
                 im = tf.image.convert_image_dtype(im, dtype=tf.float32)
                 return 2 * im - 1 # [0,1] -> [-1,1] (tanh range)
-                    
+
             image = _image_decoder(image_path)
 
             # Explicitly set the shape if you want a sanity check
@@ -53,20 +72,25 @@ class Data(object):
             if use_conditional_GAN:
                 # Semantic map only enabled for cityscapes
                 semantic_map = _image_decoder(semantic_map_path)           
-
+            
+            # if training_dataset in ['ADE20k','OpenImages']:
             if training_dataset == 'ADE20k':
                 image = _aspect_preserving_width_resize(image)
                 if use_conditional_GAN:
                     semantic_map = _aspect_preserving_width_resize(semantic_map)
                 # im.set_shape([None,512,3])
+            if training_dataset == 'OpenImages':
+                image = _preserving_longer_side_768px_resize(image)
+                if use_conditional_GAN:
+                    semantic_map = _preserving_longer_side_768px_resize(semantic_map)
+                # image = _aspect_preserving_width_resize(image)
 
             if use_conditional_GAN:
                 return image, semantic_map
             else:
                 return image
-            
 
-        print('Training on', training_dataset)
+        # print('Training on', training_dataset)
 
         if use_conditional_GAN:
             dataset = tf.data.Dataset.from_tensor_slices((image_paths, kwargs['semantic_map_paths']))
